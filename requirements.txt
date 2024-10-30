@@ -1,0 +1,7 @@
+PySDL2>=0.9.16
+pySDL2-dll>=2.30.2
+imgui[sdl2]>=2.0.0
+pydantic>=2.9.2
+numpy>=2.1.2
+requests>=2.32.3
+prometheus-client>=0.21.0
