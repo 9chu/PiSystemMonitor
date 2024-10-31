@@ -182,7 +182,7 @@ class Application(ApplicationBase):
                 imgui.pop_style_color()
 
                 # 启动时间
-                boot_time = _uptime_to_dhms(time.time() - self._metrics.boot_time_seconds)
+                boot_time = (0, 0, 0, 0) if self._metrics.boot_time_seconds == 0 else _uptime_to_dhms(time.time() - self._metrics.boot_time_seconds)
                 boot_time_str = "UP %02dD %02dH %02dM %02dS  " % boot_time
                 imgui.same_line(width - (imgui.calc_text_size(boot_time_str).x + 10))
                 imgui.push_style_color(imgui.COLOR_TEXT, *COLOR_DEFAULT_CONTENT)
