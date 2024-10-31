@@ -23,12 +23,20 @@ def _is_raspberrypi() -> bool:
 class ApplicationBase:
     def __init__(self, title="PiSystemMonitor", width=480, height=320):
         self.running = False
+        self.target_fps = 5
+        self.current_fps = 0
         self.fonts = {}
 
         # 初始化 SDL
         if SDL_Init(SDL_INIT_EVERYTHING) < 0:
             logging.error(f"SDL could not initialize, error: {SDL_GetError().decode('utf-8')}")
             raise RuntimeError("SDL could not initialize")
+
+        # 获取当前的显示信息
+        dm = SDL_DisplayMode()
+        SDL_GetCurrentDisplayMode(0, ctypes.byref(dm))
+        logging.info(f"Video driver: {SDL_GetCurrentVideoDriver()}")
+        logging.info(f"Current display: {dm.w}x{dm.h}")
 
         # 配置 OpenGL
         SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 8)
@@ -48,11 +56,16 @@ class ApplicationBase:
         SDL_SetHint(SDL_HINT_VIDEO_HIGHDPI_DISABLED, b"1")
 
         # 创建窗口
+        window_flag = SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN
+        if dm.w <= 480 and dm.h <= 320:
+            logging.debug(f"Select fullscreen mode")
+            window_flag |= SDL_WINDOW_FULLSCREEN_DESKTOP
+            SDL_ShowCursor(0)
         self.window = SDL_CreateWindow(
             title.encode("utf-8"),
             SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
             width, height,
-            SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN)
+            window_flag)
         if self.window is None:
             logging.error(f"SDL_CreateWindow fail, error: {SDL_GetError().decode('utf-8')}")
             raise RuntimeError("Could not create window")
@@ -73,6 +86,10 @@ class ApplicationBase:
 
         # 创建 Renderer
         self.imgui_renderer = FixedPipelineRenderer()
+
+        # FPS 计数器
+        self._fps_timer = 0
+        self._draw_frames = 0
 
     def _refresh_display_size(self):
         width_ptr = ctypes.pointer(ctypes.c_int(0))
@@ -152,30 +169,44 @@ class ApplicationBase:
         event = SDL_Event()
         try:
             while self.running:
+                current_tick = SDL_GetTicks64() / 1000.0
+                delta_time = current_tick - last_tick
+                self.imgui_io.delta_time = max(0.0001, delta_time)
+                last_tick = current_tick
+
+                # 计算 FPS
+                self._fps_timer += delta_time
+                if self._fps_timer >= 1.0:
+                    self.current_fps = 0 if self._fps_timer == 0 else self._draw_frames / self._fps_timer
+                    self._fps_timer = 0
+                    self._draw_frames = 0
+                    logging.debug(f"FPS: {self.current_fps}")
+                
+                # 处理事件
                 while SDL_PollEvent(ctypes.byref(event)) != 0:
                     if event.type == SDL_QUIT:
                         self.running = False
                         break
                     self._handle_event(event)
 
-                current_tick = SDL_GetTicks64() / 1000.0
-                delta_time = max(0.001, current_tick - last_tick)
-                last_tick = current_tick
-
-                self._refresh_display_size()
-                self.imgui_io.delta_time = delta_time
-
                 # 渲染 imgui
+                self._refresh_display_size()
                 imgui.new_frame()
                 self.on_frame(delta_time)
-                imgui.render()
-                draw_data = imgui.get_draw_data()
 
                 # 绘图
                 gl.glClearColor(1., 1., 1., 1)
                 gl.glClear(gl.GL_COLOR_BUFFER_BIT)
-                self.imgui_renderer.render(draw_data)
+                imgui.render()
+                self.imgui_renderer.render(imgui.get_draw_data())
                 SDL_GL_SwapWindow(self.window)
+                self._draw_frames += 1
+
+                # 补偿 sleep 时间控制 FPS
+                current_tick_end_frame = SDL_GetTicks64() / 1000.0
+                if current_tick_end_frame - current_tick < 1.0 / self.target_fps:  # 限制到 15 FPS
+                    sleep_time_ms = int(1000.0 * (1.0 / self.target_fps - (current_tick_end_frame - current_tick)))
+                    SDL_Delay(sleep_time_ms)
         except KeyboardInterrupt:
             self.running = False
 

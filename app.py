@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 import os
+import math
+import time
 import datetime
 import logging
 import imgui
@@ -21,6 +23,17 @@ COLOR_L3 = [0x02 / 0xFF, 0x30 / 0xFF, 0x47 / 0xFF, 1.0]
 COLOR_METRICS_L1 = [0xF3 / 0xFF, 0xF7 / 0xFF, 0xF0 / 0xFF, 1.0]
 COLOR_METRICS_L2 = [0xFC / 0xFF, 0xBA / 0xFF, 0x04 / 0xFF, 1.0]
 COLOR_METRICS_L3 = [0xF4 / 0xFF, 0x2B / 0xFF, 0x03 / 0xFF, 1.0]
+
+
+def _uptime_to_dhms(t: float):
+    d = t // (24 * 60 * 60)
+    t = math.fmod(t, 24 * 60 * 60)
+    h = t // (60 * 60)
+    t = math.fmod(t, 60 * 60)
+    m = t // 60
+    t = math.fmod(t, 60)
+    s = t // 1
+    return d, h, m, s
 
 
 class Application(ApplicationBase):
@@ -169,32 +182,32 @@ class Application(ApplicationBase):
                 imgui.pop_style_color()
 
                 # 启动时间
-                boot_time = datetime.datetime.fromtimestamp(self._metrics.boot_time_seconds)
-                boot_time_str = boot_time.strftime("UP %dD %HH %MM %SS  ")
+                boot_time = _uptime_to_dhms(time.time() - self._metrics.boot_time_seconds)
+                boot_time_str = "UP %02dD %02dH %02dM %02dS  " % boot_time
                 imgui.same_line(width - (imgui.calc_text_size(boot_time_str).x + 10))
                 imgui.push_style_color(imgui.COLOR_TEXT, *COLOR_DEFAULT_CONTENT)
                 imgui.text("UP")
                 imgui.pop_style_color()
                 imgui.same_line()
-                imgui.text(boot_time.strftime("%d"))
+                imgui.text(f"%02d" % boot_time[0])
                 imgui.push_style_color(imgui.COLOR_TEXT, *COLOR_DEFAULT_CONTENT)
                 imgui.same_line()
                 imgui.text("D")
                 imgui.pop_style_color()
                 imgui.same_line()
-                imgui.text(boot_time.strftime("%H"))
+                imgui.text(f"%02d" % boot_time[1])
                 imgui.push_style_color(imgui.COLOR_TEXT, *COLOR_DEFAULT_CONTENT)
                 imgui.same_line()
                 imgui.text("H")
                 imgui.pop_style_color()
                 imgui.same_line()
-                imgui.text(boot_time.strftime("%M"))
+                imgui.text(f"%02d" % boot_time[2])
                 imgui.push_style_color(imgui.COLOR_TEXT, *COLOR_DEFAULT_CONTENT)
                 imgui.same_line()
                 imgui.text("M")
                 imgui.pop_style_color()
                 imgui.same_line()
-                imgui.text(boot_time.strftime("%S"))
+                imgui.text(f"%02d" % boot_time[3])
                 imgui.push_style_color(imgui.COLOR_TEXT, *COLOR_DEFAULT_CONTENT)
                 imgui.same_line()
                 imgui.text("S")
