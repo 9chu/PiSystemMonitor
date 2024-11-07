@@ -100,10 +100,8 @@ class App(AppBase):
     def _update_plot(self, tag, value, max_y=None):
         x = [i for i in range(HIST_METRICS)]
         y = value
-        y_min = min(y)
-        y_max = max(y)
-        if max_y is not None:
-            y_max = max_y
+        y_min = 0
+        y_max = max(1, max_y if max_y is not None else max(y))
         dpg.set_axis_limits(f"{tag}_y", y_min, y_max)
         dpg.set_value(tag, [x, y])
 
