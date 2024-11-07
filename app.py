@@ -1,28 +1,11 @@
 # -*- coding: utf-8 -*-
 import os
 import math
-import time
 import datetime
-import logging
-import imgui
-import numpy as np
+import dearpygui.dearpygui as dpg
 from queue import Queue
-from sdl2 import *
-from app_base import ApplicationBase
-from sample_thread import CpuMetrics, Metrics, SampleThread
-
-
-BG_WINDOW_FLAGS = imgui.WINDOW_NO_TITLE_BAR | imgui.WINDOW_NO_SCROLLBAR | imgui.WINDOW_NO_MOVE | \
-                  imgui.WINDOW_NO_RESIZE | imgui.WINDOW_NO_COLLAPSE | imgui.WINDOW_NO_SAVED_SETTINGS
-
-
-COLOR_DEFAULT_CONTENT = [0xCF / 0xFF, 0xD8 / 0xFF, 0xD5 / 0xFF, 1.0]
-COLOR_L1 = [0xFB / 0xFF, 0x85 / 0xFF, 0, 1.0]
-COLOR_L2 = [0x21 / 0xFF, 0x9E / 0xFF, 0xBC / 0xFF, 1.0]
-COLOR_L3 = [0x02 / 0xFF, 0x30 / 0xFF, 0x47 / 0xFF, 1.0]
-COLOR_METRICS_L1 = [0xF3 / 0xFF, 0xF7 / 0xFF, 0xF0 / 0xFF, 1.0]
-COLOR_METRICS_L2 = [0xFC / 0xFF, 0xBA / 0xFF, 0x04 / 0xFF, 1.0]
-COLOR_METRICS_L3 = [0xF4 / 0xFF, 0x2B / 0xFF, 0x03 / 0xFF, 1.0]
+from app_base import AppBase
+from sample_thread import SampleThread, Metrics
 
 
 def _uptime_to_dhms(t: float):
@@ -36,193 +19,240 @@ def _uptime_to_dhms(t: float):
     return d, h, m, s
 
 
-class Application(ApplicationBase):
+def _calc_total_cpu_usage(d):
+    total = 0
+    count = 0
+    for id in d:
+        value = d[id]
+        total += value
+        count += 1
+    return 0 if count == 0 else int(max(0, min(1, total / count)) * 100)
+
+
+def _calc_total_value(d):
+    total = 0
+    for id in d:
+        total += d[id]
+    return total
+
+
+def _value_to_gb(value):
+    return int(value / 1024 / 1024 / 1024)
+
+
+def _value_auto_unit(value):
+    if value < 1000:
+        return value, "B"
+    elif value < 1000 * 1000:
+        return int(value / 1000), "K"
+    elif value < 1000 * 1000 * 1000:
+        return int(value / 1000 / 1000), "M"
+    elif value < 1000 * 1000 * 1000 * 1000:
+        return int(value / 1000 / 1000 / 1000), "G"
+    else:
+        return int(value / 1000 / 1000 / 1000 / 1000), "T"
+
+
+FONT_SIZE1 = 26
+FONT_SIZE2 = 28
+
+HIST_METRICS = 100
+
+
+class App(AppBase):
     def __init__(self):
-        super().__init__()
-        self._thread_command_queue = Queue(10)
-        self._thread_output_queue = Queue(10)
-        self._sample_thread = SampleThread(self._thread_command_queue, self._thread_output_queue)
+        super().__init__("PiSystemMonitor", 480, 320)
 
-        # 从环境变量获取配置
-        metrics_url = os.getenv("METRICS_URL", "http://localhost:9100/metrics")
-        self._thread_command_queue.put(["change_url", metrics_url, 1.0])
+        self._queue_to_thread = Queue(20)
+        self._queue_from_thread = Queue(20)
+        self._sample_thread = SampleThread(self._queue_to_thread, self._queue_from_thread)
 
-        self._metrics = Metrics.model_construct()
-        self._last_metrics_tick = SDL_GetTicks64() / 1000.0
+        self._fonts = {}
+        self._widgets = {}
 
-        self._current_page = 0
-        self._current_page_timer = 0.0
-        self._pages = [
-            self._draw_load_page,
-            self._draw_mem_page,
-        ]
+        self._current_datetime = datetime.datetime.now()
+        self._metrics = Metrics.model_construct()  # type: Metrics
+        self._cpu_history = [0 for _ in range(HIST_METRICS)]
+        self._mem_history = [0 for _ in range(HIST_METRICS)]
+        self._io_read_history = [0 for _ in range(HIST_METRICS)]
+        self._io_write_history = [0 for _ in range(HIST_METRICS)]
+        self._net_read_history = [0 for _ in range(HIST_METRICS)]
+        self._net_write_history = [0 for _ in range(HIST_METRICS)]
 
-        self._hist_load1 = [0.0 for _ in range(100)]
-        self._hist_load5 = [0.0 for _ in range(100)]
-        self._hist_load15 = [0.0 for _ in range(100)]
-        self._hist_mem_used = [0.0 for _ in range(100)]
+    def _layout_plot(self, usage_control_tag, series_control_tag, unit="%", plot_theme="plot_theme"):
+        with dpg.group(horizontal=True):
+            usage_text = dpg.add_text("%03d" % 0, tag=usage_control_tag)
+            unit_text = dpg.add_text(unit, tag=f"{usage_control_tag}_unit")
+            dpg.bind_item_font(usage_text, self._fonts["numeric"])
+            dpg.bind_item_font(unit_text, self._fonts["default"])
 
-    def _draw_load_page(self, screen_width):
-        cpu_cores = len(self._metrics.cpu_seconds_total)
-        if cpu_cores == 0:
-            load = 0
-            load_str = "N/A"
-        else:
-            load = int(min(1.0, self._metrics.load1 / cpu_cores) * 100)
-            load_str = "%03d" % (load)
+            with dpg.plot(label="", height=FONT_SIZE1, width=270, no_title=True, no_menus=True) as plot:
+                dpg.add_plot_axis(dpg.mvXAxis, label="x", no_label=True, no_tick_labels=True, no_tick_marks=True,
+                                  no_gridlines=True)
+                axis_y = dpg.add_plot_axis(dpg.mvYAxis, label="y", no_label=True, no_tick_labels=True,
+                                           no_tick_marks=True, no_gridlines=True, tag=f"{series_control_tag}_y")
+                dpg.set_axis_limits(axis_y, 0, 1)
 
-        with imgui.font(self.get_font("metrics-big")):
-            imgui.text("LOAD")
-            imgui.same_line(screen_width - (imgui.calc_text_size(load_str).x + 10))
-            if load < 30:
-                imgui.push_style_color(imgui.COLOR_TEXT, *COLOR_METRICS_L1)
-            elif load < 70:
-                imgui.push_style_color(imgui.COLOR_TEXT, *COLOR_METRICS_L2)
-            else:
-                imgui.push_style_color(imgui.COLOR_TEXT, *COLOR_METRICS_L3)
-            imgui.text(load_str)
-            imgui.pop_style_color()
+                dpg.add_line_series([], [], parent=axis_y, tag=series_control_tag, shaded=True)
 
-        # 绘制负载图
-        pos = imgui.get_cursor_screen_pos()
-        imgui.push_style_color(imgui.COLOR_FRAME_BACKGROUND, 0, 0, 0, 0)
-        imgui.push_style_color(imgui.COLOR_PLOT_LINES, *COLOR_L1)
-        imgui.plot_lines("##LOAD1", np.array(self._hist_load1, dtype="float32"), scale_min=0,
-                         scale_max=cpu_cores,
-                         graph_size=(int(screen_width - 20), imgui.get_content_region_available().y))
-        imgui.pop_style_color()
-        imgui.set_item_allow_overlap()
-        imgui.set_cursor_pos(pos)
-        imgui.push_style_color(imgui.COLOR_PLOT_LINES, *COLOR_L2)
-        imgui.plot_lines("##LOAD5", np.array(self._hist_load5, dtype="float32"), scale_min=0,
-                         scale_max=cpu_cores,
-                         graph_size=(int(screen_width - 20), imgui.get_content_region_available().y))
-        imgui.pop_style_color()
-        imgui.set_item_allow_overlap()
-        imgui.set_cursor_pos(pos)
-        imgui.push_style_color(imgui.COLOR_PLOT_LINES, *COLOR_L3)
-        imgui.plot_lines("##LOAD5", np.array(self._hist_load15, dtype="float32"), scale_min=0,
-                         scale_max=cpu_cores,
-                         graph_size=(int(screen_width - 20), imgui.get_content_region_available().y))
-        imgui.pop_style_color()
-        imgui.pop_style_color()
+                dpg.bind_item_theme(plot, plot_theme)
 
-    def _draw_mem_page(self, screen_width):
-        total_mem = self._metrics.memory_total_bytes
-        if total_mem == 0:
-            current_used = 0
-            current_used_str = "N/A"
-        else:
-            current_used = (self._metrics.memory_total_bytes - self._metrics.memory_available_bytes) / total_mem
-            current_used = int(min(1.0, max(0.0, current_used)) * 100)
-            current_used_str = "%03d" % current_used
-
-        with imgui.font(self.get_font("metrics-big")):
-            imgui.text("MEM")
-            imgui.same_line(screen_width - (imgui.calc_text_size(current_used_str).x + 10))
-            if current_used < 30:
-                imgui.push_style_color(imgui.COLOR_TEXT, *COLOR_METRICS_L1)
-            elif current_used < 70:
-                imgui.push_style_color(imgui.COLOR_TEXT, *COLOR_METRICS_L2)
-            else:
-                imgui.push_style_color(imgui.COLOR_TEXT, *COLOR_METRICS_L3)
-            imgui.text(current_used_str)
-            imgui.pop_style_color()
-
-        # 绘制内存使用曲线
-        imgui.push_style_color(imgui.COLOR_FRAME_BACKGROUND, 0, 0, 0, 0)
-        imgui.push_style_color(imgui.COLOR_PLOT_LINES, *COLOR_L1)
-        imgui.plot_lines("##MEM", np.array(self._hist_mem_used, dtype="float32"), scale_min=0,
-                         scale_max=total_mem,
-                         graph_size=(int(screen_width - 20), imgui.get_content_region_available().y))
-        imgui.pop_style_color()
-        imgui.pop_style_color()
+    def _update_plot(self, tag, value, max_y=None):
+        x = [i for i in range(HIST_METRICS)]
+        y = value
+        y_min = min(y)
+        y_max = max(y)
+        if max_y is not None:
+            y_max = max_y
+        dpg.set_axis_limits(f"{tag}_y", y_min, y_max)
+        dpg.set_value(tag, [x, y])
 
     def on_start(self):
-        self.register_font("titlebar", "FrozenCrystalBold-G21m.otf", 32)
-        self.register_font("metrics-big", "FrozenCrystalBold-G21m.otf", 96)
+        # 初始化字体
+        self.register_font("default", "./res/whitrabt.ttf", FONT_SIZE1)
+        self.register_font("numeric", "./res/Segment7-4Gml.otf", FONT_SIZE2)
 
-        # 启动采样
+        self.register_font("default_tiny", "./res/whitrabt.ttf", int(FONT_SIZE1 * 0.6))
+        self.register_font("numeric_tiny", "./res/Segment7-4Gml.otf", int(FONT_SIZE2 * 0.6))
+
+        # 初始化采样线程
+        metrics_url = os.getenv("METRICS_URL", "http://localhost:9100/metrics")  # 从环境变量获取配置
+        self._queue_to_thread.put(["change_url", metrics_url, 1.0])
+
+        # 启动采样线程
         self._sample_thread.start()
 
-    def on_frame(self, delta_time):
-        # 检查是否有最新的数据
-        while True:
-            try:
-                m = self._thread_output_queue.get(block=False)
-            except Exception:
-                m = None
-            if m is None:
-                break
-            self._metrics = m
+    def on_layout(self):
+        with dpg.theme(tag="plot_theme"):
+            with dpg.theme_component(dpg.mvPlot):
+                dpg.add_theme_style(dpg.mvPlotStyleVar_PlotPadding, 0, category=dpg.mvThemeCat_Plots)
 
-            # 采集历史数据
-            current_tick = self._metrics.tick
-            self._hist_load1.pop(0)
-            self._hist_load1.append(self._metrics.load1)
-            self._hist_load5.pop(0)
-            self._hist_load5.append(self._metrics.load5)
-            self._hist_load15.pop(0)
-            self._hist_load15.append(self._metrics.load15)
-            self._hist_mem_used.pop(0)
-            self._hist_mem_used.append(self._metrics.memory_total_bytes - self._metrics.memory_available_bytes)
-            self._last_metrics_tick = current_tick
+        # 标题行
+        with dpg.group(horizontal=True):
+            title_datetime_text = dpg.add_text("1970-01-01 00:00:00", tag="title_datetime_text")
+            dpg.add_spacer(width=55)
+            title_uptime_text = dpg.add_text("UP 000 00:00:00", tag="title_uptime_text")
 
-        # 渲染
-        width, height = self.imgui_io.display_size
-        imgui.set_next_window_position(0, 0)
-        imgui.set_next_window_size(width, height)
-        if imgui.begin("main", False, BG_WINDOW_FLAGS):
-            # 第一行：时间，启动时间
-            with imgui.font(self.get_font("titlebar")):
-                # 时间
-                dt_str = datetime.datetime.now().strftime("%H:%M:%S")
-                imgui.push_style_color(imgui.COLOR_TEXT, *COLOR_DEFAULT_CONTENT)
-                imgui.text(dt_str)
-                imgui.pop_style_color()
+            dpg.bind_item_font(title_datetime_text, self._fonts["default_tiny"])
+            dpg.bind_item_font(title_uptime_text, self._fonts["default_tiny"])
 
-                # 启动时间
-                boot_time = (0, 0, 0, 0) if self._metrics.boot_time_seconds == 0 else _uptime_to_dhms(time.time() - self._metrics.boot_time_seconds)
-                boot_time_str = "UP %02dD %02dH %02dM %02dS  " % boot_time
-                imgui.same_line(width - (imgui.calc_text_size(boot_time_str).x + 10))
-                imgui.push_style_color(imgui.COLOR_TEXT, *COLOR_DEFAULT_CONTENT)
-                imgui.text("UP")
-                imgui.pop_style_color()
-                imgui.same_line()
-                imgui.text(f"%02d" % boot_time[0])
-                imgui.push_style_color(imgui.COLOR_TEXT, *COLOR_DEFAULT_CONTENT)
-                imgui.same_line()
-                imgui.text("D")
-                imgui.pop_style_color()
-                imgui.same_line()
-                imgui.text(f"%02d" % boot_time[1])
-                imgui.push_style_color(imgui.COLOR_TEXT, *COLOR_DEFAULT_CONTENT)
-                imgui.same_line()
-                imgui.text("H")
-                imgui.pop_style_color()
-                imgui.same_line()
-                imgui.text(f"%02d" % boot_time[2])
-                imgui.push_style_color(imgui.COLOR_TEXT, *COLOR_DEFAULT_CONTENT)
-                imgui.same_line()
-                imgui.text("M")
-                imgui.pop_style_color()
-                imgui.same_line()
-                imgui.text(f"%02d" % boot_time[3])
-                imgui.push_style_color(imgui.COLOR_TEXT, *COLOR_DEFAULT_CONTENT)
-                imgui.same_line()
-                imgui.text("S")
-                imgui.pop_style_color()
+        # 图表
+        with dpg.table(header_row=False):
+            dpg.add_table_column(width_fixed=True)
+            dpg.add_table_column()
 
-            # 剩下交由 page 函数处理
-            self._current_page_timer += delta_time
-            if self._current_page_timer > 5.0:  # 5 秒切换显示
-                self._current_page_timer = 0.0
-                self._current_page = (self._current_page + 1) % len(self._pages)
-            self._pages[self._current_page](width)
+            # CPU
+            with dpg.table_row():
+                with dpg.group(horizontal=True):
+                    dpg.add_spacer(width=1)
+                    plot_cpu_text = dpg.add_text("CPU", tag="cpu_text")
+                    dpg.bind_item_font(plot_cpu_text, self._fonts["default"])
+                    dpg.add_spacer(width=1)
 
-            imgui.end()
+                self._layout_plot("cpu_usage_text", "cpu_usage_series")
+
+            # MEM
+            with dpg.table_row():
+                with dpg.group(horizontal=True):
+                    dpg.add_spacer(width=1)
+                    plot_mem_text = dpg.add_text("MEM", tag="mem_text")
+                    dpg.bind_item_font(plot_mem_text, self._fonts["default"])
+                    dpg.add_spacer(width=1)
+
+                self._layout_plot("mem_usage_text", "mem_usage_series", "G")
+
+            # I/O
+            with dpg.table_row():
+                with dpg.group(horizontal=True):
+                    dpg.add_spacer(width=1)
+                    plot_io_text = dpg.add_text("I/O", tag="io_text")
+                    dpg.bind_item_font(plot_io_text, self._fonts["default"])
+                    dpg.add_spacer(width=1)
+
+                with dpg.table(header_row=False):
+                    dpg.add_table_column(width_fixed=True)
+                    dpg.add_table_column()
+
+                    with dpg.table_row():
+                        self._layout_plot("io_read_text", "io_read_series", "B")
+                    with dpg.table_row():
+                        self._layout_plot("io_write_text", "io_write_series", "B")
+
+            # NET
+            with dpg.table_row():
+                with dpg.group(horizontal=True):
+                    dpg.add_spacer(width=1)
+                    plot_net_text = dpg.add_text("NET", tag="net_text")
+                    dpg.bind_item_font(plot_net_text, self._fonts["default"])
+                    dpg.add_spacer(width=1)
+
+                with dpg.table(header_row=False):
+                    dpg.add_table_column(width_fixed=True)
+                    dpg.add_table_column()
+
+                    with dpg.table_row():
+                        self._layout_plot("net_read_text", "net_read_series", "B")
+                    with dpg.table_row():
+                        self._layout_plot("net_write_text", "net_write_series", "B")
+
+        #dpg.show_implot_demo()
+
+    def on_frame(self):
+        # 接收采样线程消息
+        while not self._queue_from_thread.empty():
+            self._metrics = self._queue_from_thread.get()
+
+            # 收集历史数据
+            self._cpu_history.pop(0)
+            self._mem_history.pop(0)
+            self._io_read_history.pop(0)
+            self._io_write_history.pop(0)
+            self._net_read_history.pop(0)
+            self._net_write_history.pop(0)
+
+            self._cpu_history.append(_calc_total_cpu_usage(self._metrics.cpu_usage_percent))
+            self._mem_history.append(self._metrics.memory_total_bytes - self._metrics.memory_available_bytes)
+            self._io_read_history.append(_calc_total_value(self._metrics.disk_read_bytes_per_second))
+            self._io_write_history.append(_calc_total_value(self._metrics.disk_written_bytes_per_second))
+            self._net_read_history.append(_calc_total_value(self._metrics.network_receive_bytes_per_second))
+            self._net_write_history.append(_calc_total_value(self._metrics.network_transmit_bytes_per_second))
+
+        self._current_datetime = datetime.datetime.now()
+
+        # 更新标题行
+        dpg.set_value("title_datetime_text", self._current_datetime.strftime("%Y-%m-%d %H:%M:%S"))
+        dpg.set_value("title_uptime_text", "UP %03d %02d:%02d:%02d" %
+                      _uptime_to_dhms(self._metrics.boot_time_seconds))
+
+        # 更新 CPU 占用率
+        dpg.set_value("cpu_usage_text", "%03d" % self._cpu_history[-1])
+        self._update_plot("cpu_usage_series", self._cpu_history, 100)
+
+        # 更新内存占用
+        dpg.set_value("mem_usage_text", "%03d" % _value_to_gb(self._mem_history[-1]))
+        self._update_plot("mem_usage_series", self._mem_history, self._metrics.memory_total_bytes)
+
+        # 更新 I/O
+        v, u = _value_auto_unit(self._io_read_history[-1])
+        dpg.set_value("io_read_text", "%03d" % v)
+        dpg.set_value("io_read_text_unit", u)
+        self._update_plot("io_read_series", self._io_read_history)
+        v, u = _value_auto_unit(self._io_write_history[-1])
+        dpg.set_value("io_write_text", "%03d" % v)
+        dpg.set_value("io_write_text_unit", u)
+        self._update_plot("io_write_series", self._io_write_history)
+
+        # 更新 NET
+        v, u = _value_auto_unit(self._net_read_history[-1])
+        dpg.set_value("net_read_text", "%03d" % v)
+        dpg.set_value("net_read_text_unit", u)
+        self._update_plot("net_read_series", self._net_read_history)
+        v, u = _value_auto_unit(self._net_write_history[-1])
+        dpg.set_value("net_write_text", "%03d" % v)
+        dpg.set_value("net_write_text_unit", u)
+        self._update_plot("net_write_series", self._net_write_history)
 
     def on_stop(self):
-        logging.info("Quitting sample thread")
-        self._thread_command_queue.put(["quit"])
+        # 终止采样线程
+        self._queue_to_thread.put(["quit"])
         self._sample_thread.join()

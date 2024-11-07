@@ -1,15 +1,17 @@
-#!python3
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-import log
-from app import Application
+import io
+import os
+import math
+import datetime
+from log import setup_console_logger
+from app import App
 
 
 def main():
-    log.setup_console_logger()
-
-    inst = Application()
-    inst.run()
-    inst.close()
+    setup_console_logger()
+    app = App()
+    app.run()
 
 
 if __name__ == "__main__":

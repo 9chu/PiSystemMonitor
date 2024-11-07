@@ -746,3 +746,5 @@ cython_debug/
 /imgui.ini
 .idea/
 startup.sh
+/bak
+/build

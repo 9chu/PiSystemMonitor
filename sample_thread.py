@@ -3,7 +3,6 @@ import time
 import logging
 import threading
 import requests
-from sdl2 import SDL_GetTicks64
 from queue import Queue
 from typing import List, Dict, Any, Union, Optional, Tuple
 from pydantic import BaseModel
@@ -16,7 +15,7 @@ def _get_first_metrics(metrics, name):
     return None
 
 
-class CpuMetrics(BaseModel):
+class RawCpuMetrics(BaseModel):
     idle: float = 0
     iowait: float = 0
     irq: float = 0
@@ -25,6 +24,30 @@ class CpuMetrics(BaseModel):
     steal: float = 0
     system: float = 0
     user: float = 0
+
+
+def _total_cpu_seconds(cpu_metrics: RawCpuMetrics):
+    return cpu_metrics.idle + cpu_metrics.iowait + cpu_metrics.irq + cpu_metrics.nice + cpu_metrics.softirq + \
+        cpu_metrics.steal + cpu_metrics.system + cpu_metrics.user
+
+
+class RawMetrics(BaseModel):
+    tick: float = 0
+    boot_timestamp: float = 0
+    load1: float = 0
+    load5: float = 0
+    load15: float = 0
+    memory_available_bytes: float = 0
+    memory_total_bytes: float = 0
+    memory_free_bytes: float = 0
+    cpu_seconds_total: Dict[int, RawCpuMetrics] = {}
+    disk_io_time_seconds_total: Dict[str, float] = {}
+    disk_read_time_seconds_total: Dict[str, float] = {}
+    disk_write_time_seconds_total: Dict[str, float] = {}
+    disk_read_bytes_total: Dict[str, float] = {}
+    disk_written_bytes_total: Dict[str, float] = {}
+    network_receive_bytes_total: Dict[str, float] = {}
+    network_transmit_bytes_total: Dict[str, float] = {}
 
 
 class Metrics(BaseModel):
@@ -36,14 +59,12 @@ class Metrics(BaseModel):
     memory_available_bytes: float = 0
     memory_total_bytes: float = 0
     memory_free_bytes: float = 0
-    cpu_seconds_total: Dict[int, CpuMetrics] = {}
-    disk_io_time_seconds_total: Dict[str, float] = {}
-    disk_read_time_seconds_total: Dict[str, float] = {}
-    disk_write_time_seconds_total: Dict[str, float] = {}
-    disk_read_bytes_total: Dict[str, float] = {}
-    disk_written_bytes_total: Dict[str, float] = {}
-    network_receive_bytes_total: Dict[str, float] = {}
-    network_transmit_bytes_total: Dict[str, float] = {}
+    cpu_usage_percent: Dict[int, float] = {}
+    disk_read_bytes_per_second: Dict[str, float] = {}
+    disk_written_bytes_per_second: Dict[str, float] = {}
+    network_receive_bytes_per_second: Dict[str, float] = {}
+    network_transmit_bytes_per_second: Dict[str, float] = {}
+    raw: RawMetrics
 
 
 class SampleThread(threading.Thread):
@@ -61,6 +82,7 @@ class SampleThread(threading.Thread):
 
         self._stopped = False
         self._refresh_timer = 0.0
+        self._last_metrics = None  # type: Optional[RawMetrics]
 
     def _event_quit(self):
         logging.info("Stopping sample thread")
@@ -83,11 +105,11 @@ class SampleThread(threading.Thread):
         except Exception:
             logging.exception(f"Failed to fetch metrics from {self._url}")
 
-        metrics = Metrics.model_construct()
-        metrics.tick = SDL_GetTicks64() / 1000.0
+        metrics = RawMetrics.model_construct()
+        metrics.tick = time.time()
 
         # 单项参数
-        metrics.boot_time_seconds = _get_first_metrics(raw_metrics, "node_boot_time_seconds") or 0
+        metrics.boot_timestamp = _get_first_metrics(raw_metrics, "node_boot_time_seconds") or 0
         metrics.load1 = _get_first_metrics(raw_metrics, "node_load1") or 0
         metrics.load5 = _get_first_metrics(raw_metrics, "node_load5") or 0
         metrics.load15 = _get_first_metrics(raw_metrics, "node_load15") or 0
@@ -106,7 +128,7 @@ class SampleThread(threading.Thread):
             cpu_id = int(cpu_id)
             cpu_metrics = metrics.cpu_seconds_total.get(cpu_id, None)
             if not cpu_metrics:
-                cpu_metrics = CpuMetrics.model_construct()
+                cpu_metrics = RawCpuMetrics.model_construct()
                 metrics.cpu_seconds_total[cpu_id] = cpu_metrics
             if mode == "idle":
                 cpu_metrics.idle = value
@@ -182,10 +204,67 @@ class SampleThread(threading.Thread):
                 continue
             metrics.network_transmit_bytes_total[device] = value
 
-        self._q_out.put(metrics)
+        self._update_metrics(metrics)
+
+    def _update_metrics(self, metrics: RawMetrics):
+        if self._last_metrics is None:
+            self._last_metrics = metrics
+            return
+
+        m = Metrics.model_construct()
+        m.tick = metrics.tick
+
+        # 计算启动时间
+        m.boot_time_seconds = 0 if metrics.boot_timestamp == 0 else time.time() - metrics.boot_timestamp
+
+        # 单项参数
+        m.load1 = metrics.load1
+        m.load5 = metrics.load5
+        m.load15 = metrics.load15
+        m.memory_available_bytes = metrics.memory_available_bytes
+        m.memory_total_bytes = metrics.memory_total_bytes
+        m.memory_free_bytes = metrics.memory_free_bytes
+
+        # 计算 CPU 占用
+        for cpu_id, cpu_metrics in metrics.cpu_seconds_total.items():
+            last_cpu_metrics = self._last_metrics.cpu_seconds_total.get(cpu_id, None)
+            if last_cpu_metrics is None:
+                continue
+            delta_total = _total_cpu_seconds(cpu_metrics) - _total_cpu_seconds(last_cpu_metrics)
+            delta_idle = cpu_metrics.idle - last_cpu_metrics.idle
+            m.cpu_usage_percent[cpu_id] = 100.0 * (delta_total - delta_idle) / delta_total
+
+        # 计算磁盘占用
+        for device, value in metrics.disk_read_bytes_total.items():
+            last_value = self._last_metrics.disk_read_bytes_total.get(device, None)
+            if last_value is None:
+                continue
+            m.disk_read_bytes_per_second[device] = (value - last_value) / (metrics.tick - self._last_metrics.tick)
+
+        for device, value in metrics.disk_written_bytes_total.items():
+            last_value = self._last_metrics.disk_written_bytes_total.get(device, None)
+            if last_value is None:
+                continue
+            m.disk_written_bytes_per_second[device] = (value - last_value) / (metrics.tick - self._last_metrics.tick)
+
+        # 计算网络占用
+        for device, value in metrics.network_receive_bytes_total.items():
+            last_value = self._last_metrics.network_receive_bytes_total.get(device, None)
+            if last_value is None:
+                continue
+            m.network_receive_bytes_per_second[device] = (value - last_value) / (metrics.tick - self._last_metrics.tick)
+
+        for device, value in metrics.network_transmit_bytes_total.items():
+            last_value = self._last_metrics.network_transmit_bytes_total.get(device, None)
+            if last_value is None:
+                continue
+            m.network_transmit_bytes_per_second[device] = (value - last_value) / (metrics.tick - self._last_metrics.tick)
+
+        self._q_out.put(m)
+        self._last_metrics = metrics
 
     def run(self):
-        last_time = SDL_GetTicks64() / 1000.0
+        last_time = time.time()
         while not self._stopped:
             # 检查事件
             try:
@@ -204,7 +283,7 @@ class SampleThread(threading.Thread):
                     event = None
 
             # 计算时间
-            current_time = SDL_GetTicks64() / 1000.0
+            current_time = time.time()
             delta_time = current_time - last_time
             last_time = current_time
 
@@ -217,4 +296,3 @@ class SampleThread(threading.Thread):
             # 等待时间（10 ticks/s）
             time.sleep(0.1)
         self._q.task_done()
-
