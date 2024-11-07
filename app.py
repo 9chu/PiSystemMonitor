@@ -53,8 +53,8 @@ def _value_auto_unit(value):
         return int(value / 1000 / 1000 / 1000 / 1000), "T"
 
 
-FONT_SIZE1 = 26
-FONT_SIZE2 = 28
+FONT_SIZE1 = 32
+FONT_SIZE2 = 34
 
 HIST_METRICS = 100
 
@@ -86,7 +86,7 @@ class App(AppBase):
             dpg.bind_item_font(usage_text, self._fonts["numeric"])
             dpg.bind_item_font(unit_text, self._fonts["default"])
 
-            with dpg.plot(label="", height=FONT_SIZE1, width=270, no_title=True, no_menus=True) as plot:
+            with dpg.plot(label="", height=FONT_SIZE1, width=258, no_title=True, no_menus=True) as plot:
                 dpg.add_plot_axis(dpg.mvXAxis, label="x", no_label=True, no_tick_labels=True, no_tick_marks=True,
                                   no_gridlines=True)
                 axis_y = dpg.add_plot_axis(dpg.mvYAxis, label="y", no_label=True, no_tick_labels=True,
@@ -112,8 +112,8 @@ class App(AppBase):
         self.register_font("default", "./res/whitrabt.ttf", FONT_SIZE1)
         self.register_font("numeric", "./res/Segment7-4Gml.otf", FONT_SIZE2)
 
-        self.register_font("default_tiny", "./res/whitrabt.ttf", int(FONT_SIZE1 * 0.6))
-        self.register_font("numeric_tiny", "./res/Segment7-4Gml.otf", int(FONT_SIZE2 * 0.6))
+        self.register_font("default_tiny", "./res/whitrabt.ttf", int(FONT_SIZE1 * 0.5))
+        self.register_font("numeric_tiny", "./res/Segment7-4Gml.otf", int(FONT_SIZE2 * 0.5))
 
         # 初始化采样线程
         metrics_url = os.getenv("METRICS_URL", "http://localhost:9100/metrics")  # 从环境变量获取配置
@@ -130,7 +130,7 @@ class App(AppBase):
         # 标题行
         with dpg.group(horizontal=True):
             title_datetime_text = dpg.add_text("1970-01-01 00:00:00", tag="title_datetime_text")
-            dpg.add_spacer(width=55)
+            dpg.add_spacer(width=30)
             title_uptime_text = dpg.add_text("UP 000 00:00:00", tag="title_uptime_text")
 
             dpg.bind_item_font(title_datetime_text, self._fonts["default_tiny"])

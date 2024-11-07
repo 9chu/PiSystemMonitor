@@ -36,7 +36,7 @@ class AppBase:
 
     def run(self):
         dpg.create_context()
-        dpg.create_viewport(title=self._title, width=self._width, height=self._height, resizable=False)
+        dpg.create_viewport(title=self._title, width=self._width, height=self._height, resizable=False, decorated=False)
         dpg.setup_dearpygui()
 
         with dpg.font_registry():
