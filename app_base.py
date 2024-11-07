@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import io
+import time
 import dearpygui.dearpygui as dpg
 
 
@@ -53,6 +54,7 @@ class AppBase:
             while dpg.is_dearpygui_running():
                 self.on_frame()
                 dpg.render_dearpygui_frame()
+                time.sleep(0.2)
         except KeyboardInterrupt:
             pass
 
