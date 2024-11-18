@@ -17,7 +17,7 @@
 class ImGuiSDL2Backend
 {
 public:
-    enum class GamepadMode
+    enum class GamepadModes
     {
         AutoFirst = 0,
         AutoAll,
@@ -29,7 +29,7 @@ public:
     static void Initialize(SDL_Window* window);
     static void Shutdown() noexcept;
 
-    static void SetGamepadMode(GamepadMode mode, struct _SDL_GameController** manualGamepadsArray, int manualGamepadsCount) noexcept;
+    static void SetGamepadMode(GamepadModes mode, struct _SDL_GameController** manualGamepadsArray, int manualGamepadsCount) noexcept;
     static void NewFrame();
     static bool ProcessEvent(const SDL_Event* event);
 
@@ -53,7 +53,7 @@ private:
 
         // Gamepad handling
         ImVector<SDL_GameController*> Gamepads;
-        GamepadMode GamepadMode = GamepadMode::AutoFirst;
+        GamepadModes GamepadMode = GamepadModes::AutoFirst;
         bool WantUpdateGamepadsList = false;
     };
 

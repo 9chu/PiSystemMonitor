@@ -237,6 +237,7 @@ void MetricsSampleThread::RefreshMetrics()
         else
         {
             httplib::Client client(fmt::format("{}//{}", url->get_protocol(), url->get_host()));
+            client.set_connection_timeout(5);
             auto res = client.Get(fmt::format("{}", url->get_pathname()));
             if (!res)
             {

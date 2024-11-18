@@ -10,7 +10,7 @@
     { "name": "zlib" },
     { "name": "sdl2" },
     { "name": "spdlog" },
-    { "name": "cpp-httplib", "features": ["zlib", "brotli", "openssl"] },
+    { "name": "cpp-httplib", "features": ["zlib"] },
     { "name": "concurrentqueue" },
     { "name": "ada-url" },
     { "name": "double-conversion" }

@@ -20,7 +20,15 @@
 
 ### 安装
 
-需要安装 git、cmake、支持 C++20 的编译器。
+前置依赖：
+
+```bash
+sudo apt install git cmake ninja-build autoconf libtool pkg-config libx11-dev libxft-dev libxext-dev gcc g++ libwayland-dev libxkbcommon-dev libegl1-mesa-dev libibus-1.0-dev
+```
+
+需要支持 C++20 的编译器。
+
+构建：
 
 ```bash
 ./build.sh

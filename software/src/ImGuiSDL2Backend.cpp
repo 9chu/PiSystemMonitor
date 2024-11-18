@@ -192,7 +192,7 @@ void ImGuiSDL2Backend::Initialize(SDL_Window* window)
 #endif
 
     // Gamepad handling
-    bd->GamepadMode = GamepadMode::AutoFirst;
+    bd->GamepadMode = GamepadModes::AutoFirst;
     bd->WantUpdateGamepadsList = true;
 
     // Load mouse cursors
@@ -262,11 +262,12 @@ void ImGuiSDL2Backend::Shutdown() noexcept
     IM_DELETE(bd);
 }
 
-void ImGuiSDL2Backend::SetGamepadMode(GamepadMode mode, struct _SDL_GameController** manualGamepadsArray, int manualGamepadsCount) noexcept
+void ImGuiSDL2Backend::SetGamepadMode(GamepadModes mode, struct _SDL_GameController** manualGamepadsArray,
+    int manualGamepadsCount) noexcept
 {
     auto* bd = GetBackendData();
     CloseGamepads();
-    if (mode == GamepadMode::Manual)
+    if (mode == GamepadModes::Manual)
     {
         IM_ASSERT(manualGamepadsArray != nullptr && manualGamepadsCount > 0);
         for (int n = 0; n < manualGamepadsCount; n++)
@@ -546,7 +547,7 @@ void ImGuiSDL2Backend::UpdateMouseCursor() noexcept
 void ImGuiSDL2Backend::CloseGamepads() noexcept
 {
     auto* bd = GetBackendData();
-    if (bd->GamepadMode != GamepadMode::Manual)
+    if (bd->GamepadMode != GamepadModes::Manual)
     {
         for (SDL_GameController* gamepad : bd->Gamepads)
             ::SDL_GameControllerClose(gamepad);
@@ -588,7 +589,7 @@ void ImGuiSDL2Backend::UpdateGamepads()
     ImGuiIO& io = ImGui::GetIO();
 
     // Update list of controller(s) to use
-    if (bd->WantUpdateGamepadsList && bd->GamepadMode != GamepadMode::Manual)
+    if (bd->WantUpdateGamepadsList && bd->GamepadMode != GamepadModes::Manual)
     {
         CloseGamepads();
         int joystickCount = ::SDL_NumJoysticks();
@@ -599,7 +600,7 @@ void ImGuiSDL2Backend::UpdateGamepads()
                 if (SDL_GameController* gamepad = ::SDL_GameControllerOpen(n))
                 {
                     bd->Gamepads.push_back(gamepad);
-                    if (bd->GamepadMode == GamepadMode::AutoFirst)
+                    if (bd->GamepadMode == GamepadModes::AutoFirst)
                         break;
                 }
             }

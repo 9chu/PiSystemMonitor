@@ -42,7 +42,7 @@ public:
         std::map<std::string, double> NetworkTransmitBytesPerSecond;
     };
 
-    using Result = std::variant<MetricsResult>;
+    using Result = std::variant<std::monostate, MetricsResult>;
 
     struct RawCpuMetrics
     {

@@ -108,6 +108,9 @@ void App::OnStart() noexcept
     m_stIoWriteHistory.resize(kHistorySampleCount);
     m_stNetworkReceiveHistory.resize(kHistorySampleCount);
     m_stNetworkTransmitHistory.resize(kHistorySampleCount);
+
+    // 隐藏鼠标
+    SDL_ShowCursor(SDL_DISABLE);
 }
 
 void App::OnFrame(double delta) noexcept

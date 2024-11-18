@@ -87,7 +87,7 @@ endif ()
 # </editor-fold>
 # <editor-fold desc="代码">
 
-find_package(sdl2 CONFIG REQUIRED)
+find_package(SDL2 CONFIG REQUIRED)
 find_package(fmt CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
 find_package(OpenGL REQUIRED)

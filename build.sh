@@ -5,6 +5,8 @@ set -e
 cd $(dirname $0)
 mkdir -p build
 cd build
+
+export VCPKG_FORCE_SYSTEM_BINARIES=1
 cmake ../software -DCMAKE_BUILD_TYPE=RelWithDebInfo
 cmake --build . --parallel
 
