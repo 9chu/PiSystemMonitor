@@ -76,6 +76,7 @@ Result<void> App::Initialize() noexcept
     config.InitialWidth = 480;
     config.InitialHeight = 320;
     config.FullScreen = fullScreen;
+    config.TargetFPS = 5;  // 5fps is enough
     return AppBase::Initialize(config);
 }
 
