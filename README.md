@@ -2,6 +2,10 @@
 
 ![demo](./hardware/demo.jpg)
 
+2024.11.18：已更新新版 UI
+
+![demo](./software/demo.png)
+
 ## 硬件
 
 树莓派ZERO 2W + 微雪 3.5寸 LCD 屏（High SPI, 480x320） + 3D 打印外壳
@@ -10,47 +14,43 @@
 
 ## 软件
 
-技术栈：Python + pysdl2 + pyimgui
+技术栈：C++ / SDL / imgui
 
 通过读取 `node_exporter` 导出信息来展示系统状态。
 
 ### 安装
 
+需要安装 git、cmake、支持 C++20 的编译器。
+
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+./build.sh
 ```
+
+脚本会将产物拷贝到当前目录，可以根据需要编辑`startup.sh`。
 
 ### 启动
 
 ```bash
 export METRICS_URL='http://your-ip:9100/metrics'
-python3 main.py
+./PiSystemMonitor
 ```
 
 ### 开机自动启动
 
 ```bash
-cp startup.sh.default startup.sh
-chmod +x startup.sh
-vim startup.sh # modify startup.sh as you need
 mkdir -p ~/.config/autostart
 cat <<EOF > ~/.config/autostart/PiSystemMonitor.desktop
 [Desktop Entry]
 Type=Application
 Name=PiSystemMonitor
-Exec=/where_this_project_stores/startup.sh
+Exec=$PWD/startup.sh
 EOF
 ```
 
 ## 其他
 
-### 使用字体
-
-- [FrozenCrystalBold](https://www.fontspace.com/frozen-crystal-font-f33002)
-
 ### 授权
 
 - 代码授权：`MIT License`
 - 3D 模型授权：`CC BY-NC 3.0`
+- UI 使用的字体请参考字体授权

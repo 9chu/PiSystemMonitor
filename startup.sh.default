@@ -3,5 +3,4 @@
 export METRICS_URL="http://localhost:9100/metrics"
 
 cd "$(dirname $0)"
-source .venv/bin/activate
-python main.py
+./PiSystemMonitor

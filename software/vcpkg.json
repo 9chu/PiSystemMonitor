@@ -1,0 +1,20 @@
+{
+  "name": "qctrade",
+  "version-string": "0.1.0",
+  "builtin-baseline": "1de2026f28ead93ff1773e6e680387643e914ea1",
+  "dependencies": [
+    { "name": "cxxopts" },
+    { "name": "fmt" },
+    { "name": "spdlog" },
+    { "name": "nlohmann-json" },
+    { "name": "zlib" },
+    { "name": "sdl2" },
+    { "name": "spdlog" },
+    { "name": "cpp-httplib", "features": ["zlib", "brotli", "openssl"] },
+    { "name": "concurrentqueue" },
+    { "name": "ada-url" },
+    { "name": "double-conversion" }
+  ],
+  "overrides": [
+  ]
+}

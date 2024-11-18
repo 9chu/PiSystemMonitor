@@ -748,3 +748,4 @@ cython_debug/
 startup.sh
 /bak
 /build
+PiSystemMonitor
